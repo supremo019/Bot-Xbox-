@@ -4,8 +4,8 @@ import requests
 from bs4 import BeautifulSoup
 import os
 import asyncio
+import re
 
-# ===== CONFIG =====
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 
@@ -14,7 +14,6 @@ PRECO_MAXIMO = 180
 
 URL = "https://www.eneba.com/store/xbox-games"
 
-# ===== DISCORD =====
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -26,7 +25,7 @@ async def on_ready():
     print("Bot online")
     verificar_promocoes.start()
 
-# ===== BUSCAR JOGOS ENEBA =====
+# ===== BUSCA ROBUSTA =====
 def buscar_jogos():
     headers = {"User-Agent": "Mozilla/5.0"}
     r = requests.get(URL, headers=headers)
@@ -34,45 +33,41 @@ def buscar_jogos():
 
     jogos = []
 
-    for item in soup.select("div.GamesList_game__9x7m6"):
-        try:
-            nome = item.select_one("span.GameTitle_title__2Hwbr").text.strip()
-            link = "https://www.eneba.com" + item.select_one("a")["href"]
-            imagem = item.select_one("img")["src"]
+    # Cada jogo é um link para /xbox-*
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
 
-            preco_tag = item.select_one("span.LootPrice_amount__wZKZc")
-            if not preco_tag:
-                continue
-
-            preco = float(
-                preco_tag.text.replace("$", "")
-                .replace(",", ".")
-            )
-
-            if not (PRECO_MINIMO <= preco <= PRECO_MAXIMO):
-                continue
-
-            preco_antigo_tag = item.select_one("span.LootPrice_old__3N6D2")
-            if preco_antigo_tag:
-                preco_antigo = float(
-                    preco_antigo_tag.text.replace("$", "")
-                    .replace(",", ".")
-                )
-                desconto = int(((preco_antigo - preco) / preco_antigo) * 100)
-            else:
-                preco_antigo = None
-                desconto = 0
-
-            jogos.append({
-                "nome": nome,
-                "preco": preco,
-                "preco_antigo": preco_antigo,
-                "desconto": desconto,
-                "link": link,
-                "imagem": imagem
-            })
-        except:
+        if not href.startswith("/xbox"):
             continue
+
+        link = "https://www.eneba.com" + href
+
+        img = a.find("img")
+        if not img or not img.get("src"):
+            continue
+
+        imagem = img["src"]
+
+        texto = a.get_text(" ", strip=True)
+
+        preco_match = re.search(r"\$\s?(\d+[\.,]?\d*)", texto)
+        if not preco_match:
+            continue
+
+        preco = float(preco_match.group(1).replace(",", "."))
+
+        if not (PRECO_MINIMO <= preco <= PRECO_MAXIMO):
+            continue
+
+        nome = texto.split("$")[0].strip()
+
+        jogos.append({
+            "nome": nome,
+            "preco": preco,
+            "link": link,
+            "imagem": imagem,
+            "desconto": 0
+        })
 
     return jogos
 
@@ -81,7 +76,7 @@ def criar_embed(jogo):
     embed = discord.Embed(
         title=f"🎮 {jogo['nome']}",
         url=jogo["link"],
-        description="🔥 **Jogo Xbox em promoção na Eneba**",
+        description="🔥 **Jogo Xbox na Eneba**",
         color=discord.Color.from_rgb(16, 124, 16)
     )
 
@@ -90,18 +85,6 @@ def criar_embed(jogo):
         value=f"**$ {jogo['preco']:.2f}**",
         inline=True
     )
-
-    if jogo["preco_antigo"]:
-        embed.add_field(
-            name="🏷️ Antes",
-            value=f"$ {jogo['preco_antigo']:.2f}",
-            inline=True
-        )
-        embed.add_field(
-            name="📉 Desconto",
-            value=f"🔥 **-{jogo['desconto']}%**",
-            inline=True
-        )
 
     embed.add_field(name="🕹️ Plataforma", value="Xbox", inline=True)
     embed.add_field(name="🛒 Loja", value="Eneba", inline=True)
@@ -115,7 +98,7 @@ def criar_embed(jogo):
 
     return embed
 
-# ===== LOOP AUTOMÁTICO =====
+# ===== LOOP =====
 @tasks.loop(minutes=30)
 async def verificar_promocoes():
     canal = bot.get_channel(CHANNEL_ID)
@@ -124,24 +107,24 @@ async def verificar_promocoes():
     for jogo in jogos:
         if jogo["link"] not in ultimos_links:
             ultimos_links.add(jogo["link"])
-            await canal.send("@everyone 🔥 **Nova promoção Xbox!**")
+            await canal.send("@everyone 🔥 **Jogo Xbox encontrado!**")
             await canal.send(embed=criar_embed(jogo))
             await asyncio.sleep(2)
 
-# ===== COMANDO !catalogo =====
+# ===== COMANDO =====
 @bot.command(name="catalogo")
 async def catalogo(ctx):
     jogos = buscar_jogos()
 
     if not jogos:
-        await ctx.send("😢 Nenhum jogo entre $10 e $180 agora.")
+        await ctx.send("😢 Nenhum jogo encontrado agora.")
         return
 
-    await ctx.send("@everyone 🎮 **Catálogo Xbox ($10 – $180)**")
+    await ctx.send("@everyone 🎮 **Catálogo Xbox ($10–$180)**")
 
     for jogo in jogos[:10]:
         await ctx.send(embed=criar_embed(jogo))
         await asyncio.sleep(1)
 
-# ===== START =====
 bot.run(TOKEN)
+    
