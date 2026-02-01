@@ -1,7 +1,6 @@
 import discord
 from discord.ext import tasks, commands
-import requests
-from bs4 import BeautifulSoup
+import feedparser
 import os
 import json
 import asyncio
@@ -9,7 +8,7 @@ import asyncio
 # ================= CONFIGURAÇÃO =================
 TOKEN = os.getenv("DISCORD_TOKEN")         # Token do bot Discord
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))  # ID do canal Discord
-URL = "https://www.rockstargames.com/newswire"
+RSS_URL = "https://www.rockstargames.com/newswire/rss.xml"
 ARQUIVO_NOTICIAS = "noticias_rdr2.json"
 
 intents = discord.Intents.default()
@@ -23,55 +22,35 @@ def carregar_noticias_enviadas():
             return set(json.load(f))
     return set()
 
-def salvar_noticia_enviada(url):
+def salvar_noticia_enviada(link):
     enviadas = carregar_noticias_enviadas()
-    enviadas.add(url)
+    enviadas.add(link)
     with open(ARQUIVO_NOTICIAS, "w", encoding="utf-8") as f:
         json.dump(list(enviadas), f, ensure_ascii=False, indent=4)
 
 # ================= FUNÇÃO DE BUSCA =================
 def buscar_noticias_rdr2():
-    try:
-        r = requests.get(URL, timeout=20)
-        r.raise_for_status()
-    except Exception as e:
-        print("Erro ao acessar Rockstar Newswire:", e)
-        return []
-
-    soup = BeautifulSoup(r.text, "html.parser")
+    feed = feedparser.parse(RSS_URL)
     noticias = []
 
-    # Seleciona todas as notícias
-    for card in soup.select("div.NewsCardstyles__Card-sc"):
-        try:
-            titulo_tag = card.select_one("h3")
-            if not titulo_tag:
-                continue
-            titulo = titulo_tag.text.strip()
+    for entry in feed.entries:
+        titulo = entry.title
+        descricao = entry.summary if hasattr(entry, 'summary') else "Sem descrição"
+        link = entry.link
+        imagem = None
 
-            # Filtra apenas notícias de Red Dead Online
-            if "Red Dead Online" not in titulo:
-                continue
+        # Algumas entradas do RSS podem ter imagem
+        if 'media_content' in entry:
+            imagem = entry.media_content[0]['url']
 
-            link_tag = card.select_one("a")
-            link = link_tag["href"]
-            if not link.startswith("http"):
-                link = "https://www.rockstargames.com" + link
-
-            descricao_tag = card.select_one("p")
-            descricao = descricao_tag.text.strip() if descricao_tag else "Sem descrição"
-
-            imagem_tag = card.select_one("img")
-            imagem = imagem_tag["src"] if imagem_tag else None
-
+        # Filtrar apenas notícias de Red Dead Online
+        if "Red Dead Online" in titulo or "Red Dead Online" in descricao:
             noticias.append({
                 "titulo": titulo,
                 "descricao": descricao,
                 "link": link,
                 "imagem": imagem
             })
-        except:
-            continue
 
     return noticias
 
