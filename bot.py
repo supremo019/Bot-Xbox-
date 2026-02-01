@@ -1,13 +1,15 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import requests
 from bs4 import BeautifulSoup
 import os
 import asyncio
 import json
 
-TOKEN = os.getenv("DISCORD_TOKEN")
-CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
+# ================= CONFIGURAÇÃO =================
+TOKEN = os.getenv("DISCORD_TOKEN")  # Token do bot
+CHANNEL_ID = int(os.getenv("CHANNEL_ID"))  # ID do canal
+SCRAPERAPI_KEY = "9ce9e58e0409b01cf62287850e0b6d61"  # ScraperAPI (troque depois por segurança!)
 
 PRECO_MIN = 10
 PRECO_MAX = 180
@@ -18,7 +20,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ===== FUNÇÕES DE ARMAZENAMENTO =====
+# ================= FUNÇÕES DE ARMAZENAMENTO =================
 def carregar_jogos_enviados():
     if os.path.exists(ARQUIVO_JOGOS_ENVIADOS):
         with open(ARQUIVO_JOGOS_ENVIADOS, "r", encoding="utf-8") as f:
@@ -31,11 +33,19 @@ def salvar_jogo_enviado(link):
     with open(ARQUIVO_JOGOS_ENVIADOS, "w", encoding="utf-8") as f:
         json.dump(list(enviados), f, ensure_ascii=False, indent=4)
 
-# ===== BUSCAR JOGOS =====
+# ================= FUNÇÃO DE BUSCA =================
 def buscar_jogos():
-    headers = {"User-Agent": "Mozilla/5.0"}
-    r = requests.get(URL, headers=headers, timeout=15)
-    soup = BeautifulSoup(r.text, "html.parser")
+    params = {
+        "api_key": SCRAPERAPI_KEY,
+        "url": URL,
+        "render": "true"  # garante renderização JS
+    }
+    try:
+        r = requests.get("http://api.scraperapi.com", params=params, timeout=20)
+        soup = BeautifulSoup(r.text, "html.parser")
+    except Exception as e:
+        print(f"Erro ao buscar jogos: {e}")
+        return []
 
     jogos = []
 
@@ -46,13 +56,7 @@ def buscar_jogos():
             imagem = card.select_one("img")["src"]
 
             preco_texto = card.select_one("span.product-price--val").text
-            preco = float(
-                preco_texto
-                .replace("R$", "")
-                .replace(".", "")
-                .replace(",", ".")
-                .strip()
-            )
+            preco = float(preco_texto.replace("R$", "").replace(".", "").replace(",", ".").strip())
 
             if not (PRECO_MIN <= preco <= PRECO_MAX):
                 continue
@@ -60,9 +64,7 @@ def buscar_jogos():
             desconto = 0
             desconto_tag = card.select_one("span.product-discount")
             if desconto_tag:
-                desconto = int(
-                    desconto_tag.text.replace("%", "").replace("-", "").strip()
-                )
+                desconto = int(desconto_tag.text.replace("%","").replace("-","").strip())
 
             jogos.append({
                 "nome": nome,
@@ -76,7 +78,7 @@ def buscar_jogos():
 
     return jogos
 
-# ===== EMBED =====
+# ================= FUNÇÃO DE EMBED =================
 def criar_embed(jogo):
     embed = discord.Embed(
         title=f"🎮 {jogo['nome']}",
@@ -85,50 +87,65 @@ def criar_embed(jogo):
         color=discord.Color.from_rgb(16, 124, 16)
     )
 
-    embed.add_field(
-        name="💰 Preço",
-        value=f"**R$ {jogo['preco']:.2f}**",
-        inline=True
-    )
+    embed.add_field(name="💰 Preço", value=f"**R$ {jogo['preco']:.2f}**", inline=True)
 
     if jogo["desconto"] > 0:
-        embed.add_field(
-            name="📉 Desconto",
-            value=f"🔥 **-{jogo['desconto']}%**",
-            inline=True
-        )
+        embed.add_field(name="📉 Desconto", value=f"🔥 **-{jogo['desconto']}%**", inline=True)
 
     embed.add_field(name="🕹️ Plataforma", value="Xbox", inline=True)
     embed.add_field(name="🇧🇷 Região", value="Brasil", inline=True)
     embed.add_field(name="🛒 Loja", value="Nuuvem", inline=True)
 
     embed.set_image(url=jogo["imagem"])
-    embed.set_thumbnail(
-        url="https://upload.wikimedia.org/wikipedia/commons/4/43/Xbox_one_logo.svg"
-    )
-
+    embed.set_thumbnail(url="https://upload.wikimedia.org/wikipedia/commons/4/43/Xbox_one_logo.svg")
     embed.set_footer(text="Catálogo Xbox • Nuuvem")
 
     return embed
 
-# ===== COMANDO =====
-@bot.command(name="catalogo")
-async def catalogo(ctx):
+# ================= LOOP AUTOMÁTICO =================
+@tasks.loop(minutes=30)
+async def enviar_novos_jogos():
+    await bot.wait_until_ready()
+    channel = bot.get_channel(CHANNEL_ID)
     jogos = buscar_jogos()
     enviados = carregar_jogos_enviados()
 
-    # Filtrar apenas os jogos que ainda não foram enviados
     novos_jogos = [j for j in jogos if j["link"] not in enviados]
+
+    if not novos_jogos:
+        return  # nada novo para enviar
+
+    await channel.send("@everyone 🎮 **Novos jogos Xbox na Nuuvem!**")
+
+    for jogo in novos_jogos[:10]:
+        await channel.send(embed=criar_embed(jogo))
+        salvar_jogo_enviado(jogo["link"])
+        await asyncio.sleep(1)
+
+# ================= COMANDO MANUAL =================
+@bot.command(name="jogos")
+async def jogos(ctx):
+    jogos_encontrados = buscar_jogos()
+    enviados = carregar_jogos_enviados()
+
+    novos_jogos = [j for j in jogos_encontrados if j["link"] not in enviados]
 
     if not novos_jogos:
         await ctx.send("😢 Nenhum jogo novo encontrado entre R$10 e R$180.")
         return
 
-    await ctx.send("@everyone 🎮 **Catálogo Xbox — Promoções Nuuvem**")
+    await ctx.send("@everyone 🎮 **Novos jogos Xbox na Nuuvem!**")
 
     for jogo in novos_jogos[:10]:
         await ctx.send(embed=criar_embed(jogo))
-        salvar_jogo_enviado(jogo["link"])  # marca como enviado
+        salvar_jogo_enviado(jogo["link"])
         await asyncio.sleep(1)
 
+# ================= INÍCIO DO BOT =================
+@bot.event
+async def on_ready():
+    print(f"Bot conectado como {bot.user}")
+    enviar_novos_jogos.start()  # inicia loop automático
+
 bot.run(TOKEN)
+    
