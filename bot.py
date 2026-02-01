@@ -5,10 +5,12 @@ from bs4 import BeautifulSoup
 import os
 import asyncio
 
-# ===== VARIÁVEIS =====
+# ===== CONFIGURAÇÕES =====
 TOKEN = os.getenv("DISCORD_TOKEN")
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
-PRECO_MAXIMO = float(os.getenv("PRECO_MAXIMO", 50))
+
+PRECO_MINIMO = 10
+PRECO_MAXIMO = 180
 
 URL = "https://www.gamivo.com/product-category/xbox-games"
 
@@ -19,7 +21,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 ultimos_jogos = set()
 
-# ===== EVENTOS =====
+# ===== EVENTO =====
 @bot.event
 async def on_ready():
     print("Bot online")
@@ -38,12 +40,12 @@ def buscar_jogos():
             nome = item.select_one(".product-title").text.strip()
 
             preco_texto = item.select_one(".price").text.strip()
-            preco = float(preco_texto.replace("R$", "").replace(",", "."))
+            preco = float(preco_texto.replace("R$", "").replace("$", "").replace(",", "."))
 
             preco_antigo_tag = item.select_one(".price del")
             if preco_antigo_tag:
                 preco_antigo = float(
-                    preco_antigo_tag.text.replace("R$", "").replace(",", ".")
+                    preco_antigo_tag.text.replace("R$", "").replace("$", "").replace(",", ".")
                 )
                 desconto = int(((preco_antigo - preco) / preco_antigo) * 100)
             else:
@@ -57,7 +59,7 @@ def buscar_jogos():
             if "brazil" not in texto and "global" not in texto:
                 continue
 
-            if preco <= PRECO_MAXIMO:
+            if PRECO_MINIMO <= preco <= PRECO_MAXIMO:
                 jogos.append({
                     "nome": nome,
                     "preco": preco,
@@ -77,19 +79,19 @@ def criar_embed(jogo):
         title=f"🎮 {jogo['nome']}",
         url=jogo["link"],
         description="🔥 **Promoção Xbox — Resgatável no Brasil 🇧🇷**",
-        color=discord.Color.from_rgb(16, 124, 16)
+        color=discord.Color.from_rgb(16, 124, 16)  # Verde Xbox
     )
 
     embed.add_field(
-        name="💰 Preço Atual",
-        value=f"**R$ {jogo['preco']:.2f}**",
+        name="💰 Preço",
+        value=f"**$ {jogo['preco']:.2f}**",
         inline=True
     )
 
     if jogo["preco_antigo"]:
         embed.add_field(
-            name="🏷️ Preço Antigo",
-            value=f"R$ {jogo['preco_antigo']:.2f}",
+            name="🏷️ Antes",
+            value=f"$ {jogo['preco_antigo']:.2f}",
             inline=True
         )
         embed.add_field(
@@ -107,7 +109,7 @@ def criar_embed(jogo):
         url="https://upload.wikimedia.org/wikipedia/commons/4/43/Xbox_one_logo.svg"
     )
     embed.set_footer(
-        text="🔔 Promoções automáticas Xbox • Bot Gamivo",
+        text="🔔 Catálogo Xbox • Bot Gamivo",
         icon_url="https://i.imgur.com/7VbKQXy.png"
     )
 
@@ -126,18 +128,18 @@ async def verificar_promocoes():
             await canal.send(embed=criar_embed(jogo))
             await asyncio.sleep(2)
 
-# ===== COMANDO =====
-@bot.command(name="promocoes")
-async def promocoes(ctx):
+# ===== COMANDO !catalogo =====
+@bot.command(name="catalogo")
+async def catalogo(ctx):
     jogos = buscar_jogos()
 
     if not jogos:
-        await ctx.send("😢 Nenhuma promoção Xbox agora.")
+        await ctx.send("😢 Nenhum jogo entre $10 e $180 no momento.")
         return
 
-    await ctx.send("@everyone 🎮 **Promoções Xbox disponíveis:**")
+    await ctx.send("@everyone 🎮 **Catálogo Xbox ($10 – $180)**")
 
-    for jogo in jogos[:5]:
+    for jogo in jogos[:10]:
         await ctx.send(embed=criar_embed(jogo))
         await asyncio.sleep(1)
 
