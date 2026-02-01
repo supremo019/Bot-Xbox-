@@ -12,7 +12,7 @@ CHANNEL_ID = int(os.getenv("CHANNEL_ID"))
 PRECO_MINIMO = 10
 PRECO_MAXIMO = 180
 
-URL = "https://www.gamivo.com/product-category/xbox-games"
+URL = "https://www.eneba.com/store/xbox-games"
 
 # ===== DISCORD =====
 intents = discord.Intents.default()
@@ -26,7 +26,7 @@ async def on_ready():
     print("Bot online")
     verificar_promocoes.start()
 
-# ===== BUSCAR JOGOS (SIMPLES E FUNCIONAL) =====
+# ===== BUSCAR JOGOS ENEBA =====
 def buscar_jogos():
     headers = {"User-Agent": "Mozilla/5.0"}
     r = requests.get(URL, headers=headers)
@@ -34,30 +34,28 @@ def buscar_jogos():
 
     jogos = []
 
-    for item in soup.select(".product-item"):
+    for item in soup.select("div.GamesList_game__9x7m6"):
         try:
-            nome = item.select_one(".product-title").text.strip()
-            link = item.select_one("a")["href"]
+            nome = item.select_one("span.GameTitle_title__2Hwbr").text.strip()
+            link = "https://www.eneba.com" + item.select_one("a")["href"]
             imagem = item.select_one("img")["src"]
 
-            preco_tag = item.select_one(".price")
+            preco_tag = item.select_one("span.LootPrice_amount__wZKZc")
             if not preco_tag:
                 continue
 
             preco = float(
                 preco_tag.text.replace("$", "")
-                .replace("R$", "")
                 .replace(",", ".")
             )
 
             if not (PRECO_MINIMO <= preco <= PRECO_MAXIMO):
                 continue
 
-            preco_antigo_tag = item.select_one(".price del")
+            preco_antigo_tag = item.select_one("span.LootPrice_old__3N6D2")
             if preco_antigo_tag:
                 preco_antigo = float(
                     preco_antigo_tag.text.replace("$", "")
-                    .replace("R$", "")
                     .replace(",", ".")
                 )
                 desconto = int(((preco_antigo - preco) / preco_antigo) * 100)
@@ -83,8 +81,8 @@ def criar_embed(jogo):
     embed = discord.Embed(
         title=f"🎮 {jogo['nome']}",
         url=jogo["link"],
-        description="🔥 **Jogo Xbox em promoção na Gamivo**",
-        color=discord.Color.from_rgb(16, 124, 16)  # Verde Xbox
+        description="🔥 **Jogo Xbox em promoção na Eneba**",
+        color=discord.Color.from_rgb(16, 124, 16)
     )
 
     embed.add_field(
@@ -106,14 +104,14 @@ def criar_embed(jogo):
         )
 
     embed.add_field(name="🕹️ Plataforma", value="Xbox", inline=True)
-    embed.add_field(name="🛒 Loja", value="Gamivo", inline=True)
+    embed.add_field(name="🛒 Loja", value="Eneba", inline=True)
 
     embed.set_image(url=jogo["imagem"])
     embed.set_thumbnail(
         url="https://upload.wikimedia.org/wikipedia/commons/4/43/Xbox_one_logo.svg"
     )
 
-    embed.set_footer(text="Catálogo Xbox • Bot Gamivo")
+    embed.set_footer(text="Catálogo Xbox • Bot Eneba")
 
     return embed
 
