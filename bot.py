@@ -2,14 +2,14 @@ import discord
 from discord.ext import commands, tasks
 import requests
 from bs4 import BeautifulSoup
-import os
 import asyncio
 import json
+import os
 
 # ================= CONFIGURAÇÃO =================
-TOKEN = os.getenv("DISCORD_TOKEN")  # Token do bot
-CHANNEL_ID = int(os.getenv("CHANNEL_ID"))  # ID do canal
-SCRAPERAPI_KEY = "9ce9e58e0409b01cf62287850e0b6d61"  # ScraperAPI (troque depois por segurança!)
+TOKEN = os.getenv("DISCORD_TOKEN")  # Token do seu bot no Discord
+CHANNEL_ID = int(os.getenv("CHANNEL_ID"))  # ID do canal Discord
+SCRAPERAPI_KEY = "9ce9e58e0409b01cf62287850e0b6d61"  # Sua chave ScraperAPI
 
 PRECO_MIN = 10
 PRECO_MAX = 180
@@ -38,21 +38,24 @@ def buscar_jogos():
     params = {
         "api_key": SCRAPERAPI_KEY,
         "url": URL,
-        "render": "true"  # garante renderização JS
+        "render": "true"
     }
     try:
         r = requests.get("http://api.scraperapi.com", params=params, timeout=20)
-        soup = BeautifulSoup(r.text, "html.parser")
+        r.raise_for_status()
     except Exception as e:
-        print(f"Erro ao buscar jogos: {e}")
+        print("Erro na requisição:", e)
         return []
 
+    soup = BeautifulSoup(r.text, "html.parser")
     jogos = []
 
     for card in soup.select("div.product-card"):
         try:
             nome = card.select_one("h3.product-title").text.strip()
-            link = "https://www.nuuvem.com" + card.select_one("a")["href"]
+            link = card.select_one("a")["href"]
+            if not link.startswith("http"):
+                link = "https://www.nuuvem.com" + link
             imagem = card.select_one("img")["src"]
 
             preco_texto = card.select_one("span.product-price--val").text
@@ -86,20 +89,15 @@ def criar_embed(jogo):
         description="🔥 **Jogo Xbox em promoção na Nuuvem**",
         color=discord.Color.from_rgb(16, 124, 16)
     )
-
     embed.add_field(name="💰 Preço", value=f"**R$ {jogo['preco']:.2f}**", inline=True)
-
     if jogo["desconto"] > 0:
         embed.add_field(name="📉 Desconto", value=f"🔥 **-{jogo['desconto']}%**", inline=True)
-
     embed.add_field(name="🕹️ Plataforma", value="Xbox", inline=True)
     embed.add_field(name="🇧🇷 Região", value="Brasil", inline=True)
     embed.add_field(name="🛒 Loja", value="Nuuvem", inline=True)
-
     embed.set_image(url=jogo["imagem"])
     embed.set_thumbnail(url="https://upload.wikimedia.org/wikipedia/commons/4/43/Xbox_one_logo.svg")
     embed.set_footer(text="Catálogo Xbox • Nuuvem")
-
     return embed
 
 # ================= LOOP AUTOMÁTICO =================
@@ -109,14 +107,12 @@ async def enviar_novos_jogos():
     channel = bot.get_channel(CHANNEL_ID)
     jogos = buscar_jogos()
     enviados = carregar_jogos_enviados()
-
     novos_jogos = [j for j in jogos if j["link"] not in enviados]
 
     if not novos_jogos:
-        return  # nada novo para enviar
+        return
 
     await channel.send("@everyone 🎮 **Novos jogos Xbox na Nuuvem!**")
-
     for jogo in novos_jogos[:10]:
         await channel.send(embed=criar_embed(jogo))
         salvar_jogo_enviado(jogo["link"])
@@ -127,7 +123,6 @@ async def enviar_novos_jogos():
 async def jogos(ctx):
     jogos_encontrados = buscar_jogos()
     enviados = carregar_jogos_enviados()
-
     novos_jogos = [j for j in jogos_encontrados if j["link"] not in enviados]
 
     if not novos_jogos:
@@ -135,7 +130,6 @@ async def jogos(ctx):
         return
 
     await ctx.send("@everyone 🎮 **Novos jogos Xbox na Nuuvem!**")
-
     for jogo in novos_jogos[:10]:
         await ctx.send(embed=criar_embed(jogo))
         salvar_jogo_enviado(jogo["link"])
@@ -145,7 +139,6 @@ async def jogos(ctx):
 @bot.event
 async def on_ready():
     print(f"Bot conectado como {bot.user}")
-    enviar_novos_jogos.start()  # inicia loop automático
+    enviar_novos_jogos.start()
 
 bot.run(TOKEN)
-    
