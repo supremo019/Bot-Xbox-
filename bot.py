@@ -7,9 +7,9 @@ import json
 import os
 
 # ================= CONFIGURAÇÃO =================
-TOKEN = os.getenv("DISCORD_TOKEN")  # Token do seu bot no Discord
+TOKEN = os.getenv("DISCORD_TOKEN")         # Token do bot Discord
 CHANNEL_ID = int(os.getenv("CHANNEL_ID"))  # ID do canal Discord
-SCRAPERAPI_KEY = "9ce9e58e0409b01cf62287850e0b6d61"  # Sua chave ScraperAPI
+SCRAPERAPI_KEY = os.getenv("SCRAPERAPI_KEY")  # Chave ScraperAPI
 
 PRECO_MIN = 10
 PRECO_MAX = 180
@@ -50,6 +50,7 @@ def buscar_jogos():
     soup = BeautifulSoup(r.text, "html.parser")
     jogos = []
 
+    # Atualize seletores se a Nuuvem mudar o layout
     for card in soup.select("div.product-card"):
         try:
             nome = card.select_one("h3.product-title").text.strip()
@@ -142,3 +143,4 @@ async def on_ready():
     enviar_novos_jogos.start()
 
 bot.run(TOKEN)
+    
